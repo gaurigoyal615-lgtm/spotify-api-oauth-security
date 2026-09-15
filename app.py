@@ -9,28 +9,28 @@ app = Flask(__name__)
 
 app.secret_key = secrets.token_hex(32)
 
-AUTH_PROVIDER_URL = "https://accounts.spotify.com/authorize"
-CLIENT_ID= app.config['SPOTIFY_CLIENT_ID'] = os.environ['SPOTIFY_CLIENT_ID']
-def generate_secure_string(length=16):
+AUTH_PROVIDER_URL = "https://accounts.spotify.com/authorize"      #  |- I am fetching it from .env which is hidden on github(cause it's personal duh ;) )
+CLIENT_ID= app.config['SPOTIFY_CLIENT_ID'] = os.environ['SPOTIFY_CLIENT_ID'] #client id given by spotify itself when I initiated an app from their website
+def generate_secure_string(length=16):  # to generate client_verifier which is one time identifier for my request to authorization server
     # Combines letters and numbers: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
-    characters = string.ascii_letters + string.digits
+    characters = string.ascii_letters + string.digits       
     return ''.join(secrets.choice(characters) for _ in range(length))
 
     
-@app.route('/login')
+@app.route('/login') 
 
 def login():
-    state = secrets.token_urlsafe(32)
+    state = secrets.token_urlsafe(32) #creating a state(unique) for user session which has to be stored so that the server can handle multiple same type of request uniquely
     
-    session['oauth_state'] = state
+    session['oauth_state'] = state #have to store that state so that the response can match it with its state
     code_verifier = generate_secure_string(64)
     session['code_verifier']= code_verifier
-    hashed = hashlib.sha256(code_verifier.encode('utf-8')).digest()
-    codeChallenge = base64.urlsafe_b64decode(hashed).rstrip(b"=").decode("ascii")
+    hashed = hashlib.sha256(code_verifier.encode('utf-8')).digest() # created an hash of the generated random string            |
+    codeChallenge = base64.urlsafe_b64decode(hashed).rstrip(b"=").decode("ascii") # converted that hash to base64 encoding       |- convention to make a codechallenge -> its the method which will be sent to the server rather than the code_verifer itself
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
-        "state": state,
+        "state": state,                                             # these are the final parametes which our request will carry with itself to the server
         "code_challenge_method": 'S256',
         "code_challenge": codeChallenge,
         "redirect_uri": "http://127.0.0.1:5000/callback",
@@ -38,7 +38,7 @@ def login():
         
         
     }
-    return redirect(f"{AUTH_PROVIDER_URL}?{urlencode(params)}")
+    return redirect(f"{AUTH_PROVIDER_URL}?{urlencode(params)}")         
 
 if __name__ == '__main__':
     app.run(debug=True)
