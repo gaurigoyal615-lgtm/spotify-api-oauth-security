@@ -1,5 +1,4 @@
 # spotify-api-oauth-security
-# Spotify OAuth Security Lab
 
 A learning project to understand OAuth 2.0 Authorization Code Flow with PKCE, server-side session management, token handling, and secure access to the Spotify Web API using Flask.
 
