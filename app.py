@@ -132,18 +132,31 @@ def callback():
     session["access_token"] = tokens["access_token"]
     session["expires_at"] = time.time() + tokens["expires_in"]
     
+    
+    
     if tokens.get("refresh_token"):
         session["refresh_token"] = tokens["refresh_token"]
+    
     
     # Confirm success w/o displaying any tokens
     return "Spotify authorization successful! Tokens stored server-side."
 
 @app.route('/me')
 def me():
+    # Get the token and expiry from the session
     access_token = session.get("access_token")
-    
-    if not access_token:
-        return "Not authenticated user. Please log in first.", 401
+    expires_at = session.get("expires_at")
+
+    # If we're not authenticated, start login
+    if not access_token or not expires_at:
+        return redirect("/login")
+
+    # Refresh if the token is about to expire
+    if time.time() >= expires_at - 60:
+        if not refresh_access_token():
+            return redirect("/login")
+
+        access_token = session["access_token"]
     
     try:
         response = requests.get(
@@ -164,5 +177,54 @@ def me():
         "id": profile.get("id"),
         "spotify_url": profile.get("external_urls", {}).get("spotify")
     }
+    
+    # An access token is a short-lived credential used to access protected resources and APIs, while a refresh token is a long-lived credential used exclusively to request a new access token when the old one expires
+        
+    # Our goal is to make your app check the access token's expiry before calling the API and refresh it when necessary.
+      
+def refresh_access_token():
+    refresh_token = session.get("refresh_token")
+    
+    if not refresh_token:
+        return False
+    
+    refresh_data = {
+        "grant_type": "refresh_token" , # grant_type="refresh_token" tells   Spotify which OAuth operation we're performing
+        "refresh_token": refresh_token,
+        "client_id": CLIENT_ID
+    }
+    
+    try:
+        response = requests.post(
+            TOKEN_URL,
+            data=refresh_data,
+            timeout=15
+        )
+        if response.status_code == 400:
+            error_data = response.json()
+            if error_data.get("error") == "invalid_grant":
+                session.pop("access_token", None)
+                session.pop("refresh_token", None)
+                session.pop("expires_at", None)
+                return False
+            
+        response.raise_for_status()
+        tokens = response.json()
+        
+    except requests.RequestException:
+        app.logger.exception("Spotify token refresh failed")
+        return False
+    
+    session["access_token"] = tokens["access_token"]
+    session["expires_at"] = time.time() + tokens["expires_in"]
+    
+    # Spotify may not return a replacement refresh token.
+    if tokens.get("refresh_token"):
+        session["refresh_token"] = tokens["refresh_token"]
+
+    app.logger.info("Spotify access token refreshed successfully")
+    
+    return True
+    
 if __name__ == '__main__':
     app.run(debug=True)
