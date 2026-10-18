@@ -5,21 +5,29 @@ from flask import Flask, redirect, request, session, abort
 from dotenv import load_dotenv
 import string,hashlib,base64
 from flask_session import Session
+import redis
 load_dotenv()
 app = Flask(__name__)
 
-app.config["SESSION_PERMANENT"] = False     # Sessions expire when browser closes
-app.config["SESSION_TYPE"] = "filesystem"     # Store session data on the filesystem
-app.config["SECRET_KEY"] = os.environ["FLASK_SECRET_KEY"]
-Session(app)
-
-
-AUTH_PROVIDER_URL = "https://accounts.spotify.com/authorize"      #  |- I am fetching it from .env which is hidden on github(cause it's personal duh ;) )
+app.config["SECRET_KEY"] = os.environ["FLASK_SECRET_KEY"]  #  |- I am fetching it from .env which is hidden on github(cause it's personal duh ;) )
 
 #Flask knowledge: app.config stores application-wide settings as dict
 #A Flask session stores user-specific data across requests, like login status, using cookies 
 #Saving data for use throughout a session allows the web app to keep data persistent over multiple requests -- i.e., as a user accesses different pages within a web app.
 #by default Flask uses client-side sessions but we want to store sensitive data so we want server-side session
+
+app.config["SESSION_TYPE"] = "redis"     # Store session data on redis
+app.config["SESSION_PERMANENT"] = False     # Sessions expire when browser closes
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_REDIS'] = redis.from_url('redis://127.0.0.1:6379')
+
+
+Session(app) # initializes the Flask-Session integration
+
+
+AUTH_PROVIDER_URL = "https://accounts.spotify.com/authorize"     
+
+
 CLIENT_ID= app.config['SPOTIFY_CLIENT_ID'] = os.environ['SPOTIFY_CLIENT_ID'] #client id given by spotify itself when I initiated an app from their website
 
 def generate_secure_string(length=64):  # to generate client_verifier which is secret generated for this PKCE auth transaction
@@ -40,10 +48,9 @@ def login():
     code_verifier = generate_secure_string(64)
     session['code_verifier']= code_verifier
     
-    hashed = hashlib.sha256(code_verifier.encode('utf-8')).digest() # created an hash of the generated random string            |
-                                                #   |
+    hashed = hashlib.sha256(code_verifier.encode('utf-8')).digest() # created an hash of the generated random string            |                                           #   |
     codeChallenge = base64.urlsafe_b64encode(hashed).rstrip(b"=").decode("ascii") # converted that hash to base64 encoding       |- convention to make a codechallenge -> its the method which will be sent to the server rather than the code_verifer itself
-    
+
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
@@ -55,7 +62,8 @@ def login():
         
         
     }
-    return redirect(f"{AUTH_PROVIDER_URL}?{urlencode(params)}")         
+    authorization_url = f"{AUTH_PROVIDER_URL}?{urlencode(params)}" 
+    return redirect(authorization_url)  
 
 if __name__ == '__main__':
     app.run(debug=True)
