@@ -137,6 +137,32 @@ def callback():
     
     # Confirm success w/o displaying any tokens
     return "Spotify authorization successful! Tokens stored server-side."
-       
+
+@app.route('/me')
+def me():
+    access_token = session.get("access_token")
+    
+    if not access_token:
+        return "Not authenticated user. Please log in first.", 401
+    
+    try:
+        response = requests.get(
+            "https://api.spotify.com/v1/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15
+        )
+        
+        response.raise_for_status()
+    except requests.RequestException:
+        app.logger.exception("Spotify profile requeest failed")
+        return "Could not fetch Spotify profile. Check tthe Flask logs.", 502
+    
+    profile = response.json()
+    
+    return {
+        "display_name": profile.get("display_name"),
+        "id": profile.get("id"),
+        "spotify_url": profile.get("external_urls", {}).get("spotify")
+    }
 if __name__ == '__main__':
     app.run(debug=True)
