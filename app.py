@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import string,hashlib,base64
 from flask_session import Session
 import redis
+import requests
+import time
 load_dotenv()
 app = Flask(__name__)
 
@@ -65,5 +67,76 @@ def login():
     authorization_url = f"{AUTH_PROVIDER_URL}?{urlencode(params)}" 
     return redirect(authorization_url)  
 
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+REDIRECT_URI = "http://127.0.0.1:5000/callback"
+
+@app.route('/callback')
+def callback():
+    #read the values spotify returned
+    returned_state = request.args.get("state")
+    code = request.args.get("code")
+    error = request.args.get("error")
+
+    # retreive the state saves during /login
+    saved_state = session.get("oauth_state")
+    
+    if (
+        not returned_state
+        or not saved_state
+        or not secrets.compare_digest(returned_state, saved_state)
+    ):
+        session.pop("oauth_state", None)
+        session.pop("code_verifier", None)
+        abort(400, description= "Invalid OAuth state. Please try logging in again.")
+
+        # retreive the PKCE verifier saved during /login
+    code_verifier = session.get("code_verifier")
+        
+        #this auth attempt has now been checked.
+        #remove its temp values to prevent reuse.
+    session.pop("oauth_state", None)
+    session.pop("code_verifier", None)
+        
+        # Handle the user denying auth
+    if error:
+            return f"Spotify authorization failed: {error}", 400
+        
+        # check that Spotify retuerned an auth code
+    if not code or not code_verifier:
+            abort(400, description= "Missing authorization code or PKCE verifier.")
+        
+    #Exchange the code for tokens
+       
+    token_data = {
+        "client_id": CLIENT_ID,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        "code_verifier": code_verifier
+    }
+    
+    try:
+        response = requests.post(
+             TOKEN_URL,
+             data=token_data,
+             timeout=15
+        )
+        response.raise_for_status()
+        tokens = response.json()
+    
+    except requests.RequestException:
+        app.logger.exception("Spotify token rquest failed.")
+        return "Token exchange failed. Check the Flask logs.", 502
+    
+    # store tokens in the server-side session
+    session["access_token"] = tokens["access_token"]
+    session["expires_at"] = time.time() + tokens["expires_in"]
+    
+    if tokens.get("refresh_token"):
+        session["refresh_token"] = tokens["refresh_token"]
+    
+    # Confirm success w/o displaying any tokens
+    return "Spotify authorization successful! Tokens stored server-side."
+       
 if __name__ == '__main__':
     app.run(debug=True)
