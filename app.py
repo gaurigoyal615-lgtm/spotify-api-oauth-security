@@ -141,42 +141,40 @@ def callback():
     # Confirm success w/o displaying any tokens
     return "Spotify authorization successful! Tokens stored server-side."
 
+
+#this route is giving all the info about the authenticated user
+
 @app.route('/me')
 def me():
-    # Get the token and expiry from the session
-    access_token = session.get("access_token")
-    expires_at = session.get("expires_at")
+    response, error = spotify_api_request("me")
 
-    # If we're not authenticated, start login
-    if not access_token or not expires_at:
+    if error == "not_authenticated":
         return redirect("/login")
 
-    # Refresh if the token is about to expire
-    if time.time() >= expires_at - 60:
-        if not refresh_access_token():
-            return redirect("/login")
+    if error == "refresh_failed":
+        return "Token refresh failed. Please log in again.", 401
 
-        access_token = session["access_token"]
-    
-    try:
-        response = requests.get(
-            "https://api.spotify.com/v1/me",
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=15
+    if error == "request_failed":
+        return "Could not reach Spotify. Try again later.", 502
+
+    if response.status_code == 401:
+        return "Spotify rejected the access token.", 401
+
+    if not response.ok:
+        app.logger.warning(
+            "Spotify profile request returned HTTP %s",
+            response.status_code
         )
-        
-        response.raise_for_status()
-    except requests.RequestException:
-        app.logger.exception("Spotify profile requeest failed")
-        return "Could not fetch Spotify profile. Check tthe Flask logs.", 502
-    
+        return "Spotify profile request failed.", 502
+
     profile = response.json()
-    
+
     return {
         "display_name": profile.get("display_name"),
         "id": profile.get("id"),
         "spotify_url": profile.get("external_urls", {}).get("spotify")
     }
+
     
     # An access token is a short-lived credential used to access protected resources and APIs, while a refresh token is a long-lived credential used exclusively to request a new access token when the old one expires
         
@@ -225,6 +223,110 @@ def refresh_access_token():
     app.logger.info("Spotify access token refreshed successfully")
     
     return True
-    
+
+
+def spotify_api_request(endpoint, params=None):
+    access_token = session.get("access_token")
+    expires_at = session.get("expires_at")
+
+    if not access_token or not expires_at:
+        return None, "not_authenticated"
+
+    if time.time() >= expires_at - 60:
+        if not refresh_access_token():
+            return None, "refresh_failed"
+
+        access_token = session.get("access_token")
+
+    try:
+        response = requests.get(
+            f"https://api.spotify.com/v1/{endpoint.lstrip('/')}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params=params,
+            timeout=15
+        )
+        return response, None
+
+    except requests.RequestException:
+        app.logger.exception("Spotify API request failed")
+        return None, "request_failed"
+
+
+@app.route('/top/artists')
+def top_artists():
+    response, error = spotify_api_request(
+        "me/top/artists",
+        params={"limit": 10, "time_range": "medium_term"}
+    )
+
+    if error == "not_authenticated":
+        return redirect("/login")
+
+    if error == "refresh_failed":
+        return "Token refresh failed. Please log in again.", 401
+
+    if error == "request_failed":
+        return "Could not reach Spotify. Try again later.", 502
+
+    if not response.ok:
+        app.logger.warning(
+            "Top artists request returned HTTP %s",
+            response.status_code
+        )
+        return "Could not fetch top artists.", response.status_code
+
+    artists = response.json()["items"]
+
+    return {
+        "top_artists": [
+            {
+                "name": artist["name"],
+                "id": artist["id"],
+                "spotify_url": artist["external_urls"]["spotify"]
+            }
+            for artist in artists
+        ]
+    }
+
+
+@app.route('/top/tracks')
+def top_tracks():
+    response, error = spotify_api_request(
+        "me/top/tracks",
+        params={"limit": 10, "time_range": "medium_term"}
+    )
+
+    if error == "not_authenticated":
+        return redirect("/login")
+
+    if error == "refresh_failed":
+        return "Token refresh failed. Please log in again.", 401
+
+    if error == "request_failed":
+        return "Could not reach Spotify. Try again later.", 502
+
+    if not response.ok:
+        app.logger.warning(
+            "Top tracks request returned HTTP %s",
+            response.status_code
+        )
+        return "Could not fetch top tracks.", response.status_code
+
+    tracks = response.json()["items"]
+
+    return {
+        "top_tracks": [
+            {
+                "name": track["name"],
+                "id": track["id"],
+                "artists": [
+                    artist["name"] for artist in track["artists"]
+                ],
+                "spotify_url": track["external_urls"]["spotify"]
+            }
+            for track in tracks
+        ]
+    }
+   
 if __name__ == '__main__':
     app.run(debug=True)
