@@ -7,6 +7,7 @@ from unittest.mock import patch, Mock
 
 from app import app
 
+from flask import session
 
 def test_top_artists_returns_artist_data():
     # Create fake Spotify data
@@ -47,5 +48,47 @@ def test_top_artists_returns_artist_data():
         "https://open.spotify.com/artist/artist123"
     )
 
+
+def test_top_artists_redirects_when_not_authenticated():
+    with patch(
+        "app.spotify_api_request",
+        return_value=(None, "not_authenticated")
+    ):
+        client = app.test_client()
+        response = client.get("/top/artists")
+
+    assert response.status_code == 302
+    assert response.location.endswith("/login")
+
+
+
+def test_top_artists_handles_spotify_api_error():
+    fake_response = Mock()
+    fake_response.ok = False
+    fake_response.status_code = 403
+
+    with patch(
+        "app.spotify_api_request",
+        return_value=(fake_response, None)
+    ):
+        client = app.test_client()
+        response = client.get("/top/artists")
+
+    assert response.status_code == 403
+    assert response.get_data(as_text=True) == (
+        "Could not fetch top artists."
+    )
+
+
+def test_spotify_api_request_without_token():
+    from app import spotify_api_request
+
+    with app.test_request_context("/"):
+        session.clear()
+
+        result, error = spotify_api_request("me")
+
+        assert result is None
+        assert error == "not_authenticated"
 
 
