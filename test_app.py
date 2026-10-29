@@ -36,7 +36,7 @@ def test_top_artists_returns_artist_data():
     ): #temporarily replaces real helper with a fake one
         
         # Send a request to our Flask route
-        client = app.test_client() # lets us send requests to Flask without starting a server or opening a browser.
+        client = app.app.test_client() # lets us send requests to Flask without starting a server or opening a browser.
         response = client.get("/top/artists")
 
     # Check the result
@@ -55,7 +55,7 @@ def test_top_artists_redirects_when_not_authenticated():
         "app.spotify_api_request",
         return_value=(None, "not_authenticated")
     ):
-        client = app.test_client()
+        client = app.app.test_client()
         response = client.get("/top/artists")
 
     assert response.status_code == 302
@@ -72,7 +72,7 @@ def test_top_artists_handles_spotify_api_error():
         "app.spotify_api_request",
         return_value=(fake_response, None)
     ):
-        client = app.test_client()
+        client = app.app.test_client()
         response = client.get("/top/artists")
 
     assert response.status_code == 403
@@ -84,7 +84,7 @@ def test_top_artists_handles_spotify_api_error():
 def test_spotify_api_request_without_token():
     from app import spotify_api_request
 
-    with app.test_request_context("/"):
+    with app.app.test_request_context("/"):
         session.clear()
 
         result, error = spotify_api_request("me")
@@ -128,3 +128,34 @@ def test_refresh_access_token_success(monkeypatch):
         assert result is True
         assert session["access_token"] == "new_access_token"
         assert session["expires_at"] > time.time()
+
+
+def test_refresh_access_token_invalid_grant(monkeypatch):
+    with app.app.test_request_context("/"):
+        # Arrange: simulate an existing session with tokens
+        session["access_token"] = "old_access_token"
+        session["refresh_token"] = "invalid_refresh_token"
+        session["expires_at"] = 9999999999
+
+        # Simulate Spotify rejecting the refresh token
+        class FakeResponse:
+            status_code = 400
+
+            def json(self):
+                return {"error": "invalid_grant"}
+
+        def fake_post(*args, **kwargs):
+            return FakeResponse()
+
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        # Act: call the actual refresh function
+        result = app.refresh_access_token()
+
+        # Assert: refresh fails
+        assert result is False
+
+        # Assert: all three token-related session keys are cleared
+        assert "access_token" not in session
+        assert "refresh_token" not in session
+        assert "expires_at" not in session
