@@ -1,13 +1,14 @@
-# mocking-> not depending on actual sebers for the response data
+# mocking: not depending on actual servwers for the response data
 # this makes testing fast
 # hence we add mock spotify_api_request() and return a fake response
 # this test does not prove that Spotify login or token refresh works. It isolates the route's behavior: given a successful helper response, does the route return the correct JSON?
 
 from unittest.mock import patch, Mock
 
-from app import app
+import app
 
-from flask import session
+from flask import session, Flask, request
+import requests
 
 def test_top_artists_returns_artist_data():
     # Create fake Spotify data
@@ -92,3 +93,38 @@ def test_spotify_api_request_without_token():
         assert error == "not_authenticated"
 
 
+#now we are testing that given a refresh token in the session and a successful response from Spotify, does refresh_access_token() save the new access token and expiry correctly?
+
+def test_refresh_access_token_success(monkeypatch):
+    import time
+
+    with app.app.test_request_context("/"):
+        # Arrange: simulate an existing refresh token
+        session["refresh_token"] = "old_refresh_token"
+
+        # Simulate Spotify successfully returning a new access token
+        class FakeResponse:
+            ok = True
+            status_code = 200
+            def raise_for_status(self):
+                    pass 
+            def json(self):
+                return {
+                    "access_token": "new_access_token",
+                    "expires_in": 3600,
+                    
+                }
+
+        # Replace the real HTTP request with our fake response
+        def fake_post(*args, **kwargs):
+            return FakeResponse()
+
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        # Act: run the actual refresh function
+        result = app.refresh_access_token()
+
+        # Assert: verify the refresh worked
+        assert result is True
+        assert session["access_token"] == "new_access_token"
+        assert session["expires_at"] > time.time()
