@@ -159,3 +159,28 @@ def test_refresh_access_token_invalid_grant(monkeypatch):
         assert "access_token" not in session
         assert "refresh_token" not in session
         assert "expires_at" not in session
+
+
+def test_refresh_access_token_http_error(monkeypatch):
+    with app.app.test_request_context("/"):
+        # Arrange: provide a refresh token
+        session["refresh_token"] = "existing_refresh_token"
+
+        # Simulate Spotify returning HTTP 500
+        class FakeResponse:
+            status_code = 500
+
+            def raise_for_status(self):
+                raise requests.HTTPError("Spotify server error")
+
+        def fake_post(*args, **kwargs):
+            return FakeResponse()
+
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        # Act
+        result = app.refresh_access_token()
+
+        # Assert
+        assert result is False
+        assert session["refresh_token"] == "existing_refresh_token"
