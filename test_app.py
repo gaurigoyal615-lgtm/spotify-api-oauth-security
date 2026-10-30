@@ -6,7 +6,7 @@
 from unittest.mock import patch, Mock
 
 import app
-
+import time
 from flask import session, Flask, request
 import requests
 
@@ -128,6 +128,7 @@ def test_refresh_access_token_success(monkeypatch):
         assert result is True
         assert session["access_token"] == "new_access_token"
         assert session["expires_at"] > time.time()
+        assert session["refresh_token"] == "old_refresh_token"
 
 
 def test_refresh_access_token_invalid_grant(monkeypatch):
@@ -184,3 +185,29 @@ def test_refresh_access_token_http_error(monkeypatch):
         # Assert
         assert result is False
         assert session["refresh_token"] == "existing_refresh_token"
+
+
+#to handle spotify api request in case of connection failure
+
+def test_spotify_api_request_network_error(monkeypatch):
+    with app.app.test_request_context("/"):
+        # Arrange: provide a valid access token
+        session["access_token"] = "valid_access_token"
+        session["expires_at"] = time.time() + 3600
+
+        # Simulate a network failure
+        def fake_get(*args, **kwargs):
+            raise requests.ConnectionError("Network unavailable")
+
+        monkeypatch.setattr(requests, "get", fake_get)
+
+        # Act
+        result, error = app.spotify_api_request("me")
+
+        # Assert
+        assert result is None
+        assert error == "request_failed"
+
+
+
+
