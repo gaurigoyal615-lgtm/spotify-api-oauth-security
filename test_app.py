@@ -208,6 +208,32 @@ def test_spotify_api_request_network_error(monkeypatch):
         assert result is None
         assert error == "request_failed"
 
+def test_top_routes_handle_rate_limit():
+    mock_response = Mock()
+    mock_response.ok = False
+    mock_response.status_code = 429
+
+    routes = ["/top/artists", "/top/tracks"]
+
+    for route in routes:
+        with patch("app.spotify_api_request", return_value=(mock_response, None)):
+            response = app.app.test_client().get(route)
+
+        assert response.status_code == 429
+        
+
+def test_top_routes_handle_missing_items():
+    mock_response = Mock()
+    mock_response.ok = True
+    mock_response.json.return_value = {}
+
+    routes = ["/top/artists", "/top/tracks"]
+
+    for route in routes:
+        with patch("app.spotify_api_request", return_value=(mock_response, None)):
+            response = app.app.test_client().get(route)
+
+        assert response.status_code == 500
 
 
 
