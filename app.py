@@ -317,8 +317,11 @@ def top_tracks():
             response.status_code
         )
         return "Could not fetch top tracks.", response.status_code
-
-    tracks = response.json()["items"]
+    try:
+        tracks = response.json()["items"]
+    except (ValueError, KeyError):
+            app.logger.warning("Spotify returned an unexpected response.")
+            return "Invalid response received from Spotify.", 502
 
     return {
         "top_tracks": [
