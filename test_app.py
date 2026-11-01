@@ -234,6 +234,20 @@ def test_top_routes_handle_missing_items():
             response = app.app.test_client().get(route)
 
         assert response.status_code == 500
+        assert response.status_code == 502
+
+def test_top_routes_handle_invalid_json():
+    mock_response = Mock()
+    mock_response.ok = True
+    mock_response.json.side_effect = ValueError("Invalid JSON")
+
+    routes = ["/top/artists", "/top/tracks"]
+
+    for route in routes:
+        with patch("app.spotify_api_request", return_value=(mock_response, None)):
+            response = app.app.test_client().get(route)
+
+        assert response.status_code == 502
 
 
 
