@@ -274,9 +274,13 @@ def top_artists():
             response.status_code
         )
         return "Could not fetch top artists.", response.status_code
-
-    artists = response.json()["items"]
-
+    try:
+        artists = response.json()["items"]
+    
+    except (ValueError, KeyError):
+        app.logger.warning("Spotify returned an unexpected response.")
+        return "Invalid response received from Spotify.", 502
+        
     return {
         "top_artists": [
             {
@@ -287,6 +291,8 @@ def top_artists():
             for artist in artists
         ]
     }
+    
+        
 
 
 @app.route('/top/tracks')
@@ -327,6 +333,6 @@ def top_tracks():
             for track in tracks
         ]
     }
-   
+ 
 if __name__ == '__main__':
     app.run(debug=True)
