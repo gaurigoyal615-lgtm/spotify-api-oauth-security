@@ -239,13 +239,31 @@ def spotify_api_request(endpoint, params=None):
         access_token = session.get("access_token")
 
     try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        url = f"https://api.spotify.com/v1/{endpoint.lstrip('/')}"
         response = requests.get(
-            f"https://api.spotify.com/v1/{endpoint.lstrip('/')}",
-            headers={"Authorization": f"Bearer {access_token}"},
+            url= url,
+            headers=headers,
             params=params,
             timeout=15
         )
+        if response.status_code == 401:
+            if not refresh_access_token():
+                return None, "refresh_failed"
+
+            access_token = session.get("access_token")
+            if not access_token:
+                     return None, "refresh_failed"
+            headers["Authorization"] = f"Bearer {access_token}"
+
+            response = requests.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=15
+            )
         return response, None
+    
 
     except requests.RequestException:
         app.logger.exception("Spotify API request failed")
